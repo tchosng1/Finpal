@@ -9,9 +9,9 @@
 
 ## Stage 2 — Profiles and identity
 
-- Add Firebase Google authentication when a Firebase web app is configured.
+- Add Firebase Google, Microsoft, and email/password authentication when each method is enabled.
 - Support multiple people under a signed-in owner, with profile switching and separate financial state.
-- Persist demo data locally and authenticated data in profile-specific Firestore documents.
+- Persist demo data locally and let authenticated users choose shared Firestore, Google Drive, OneDrive, or browser-only storage.
 - Add owner-only Firestore rules.
 - **Exit check:** profile switching preserves context; no cross-profile state is reused.
 
@@ -31,4 +31,4 @@
 
 ## Current release boundary and follow-up
 
-The delivered app is a functional MVP and demo. Public Firebase sign-in/cloud sync requires the Google provider, Firestore database, authorized domains, and deployed security rules to be configured in the shared Firebase project. Automated UI checks can exercise demo mode locally, but production OAuth and Firestore access must be verified with the project owner’s credentials. Reusable budget profiles now model a percentage allocation over a date range and report annual planned totals. FIRE goal projections show a separate post-FI return and a fixed annual withdrawal based on the FI balance. Next recommended work: add unit tests for financial calculations and Firebase rules, transaction-driven budget actuals, liabilities, schema versioning, and real-device accessibility review.
+The delivered app is a functional MVP and demo. Shared Firebase storage requires the Firestore database, authorized domains, Google sign-in, and deployed rules. Microsoft identity requires the Firebase Microsoft provider and an Entra app registration. Personal Google Drive/OneDrive storage requires OAuth app registrations configured in `src/lib/storage-config.ts`; without these IDs, the shared Firestore and device-only choices remain available. Provider consent and real cloud round-trips must be verified with owner credentials before public launch. Storage destinations are independent; automatic migration between them is not implemented. Next recommended work: add an explicit migration/export/import workflow, unit tests for calculations and Firebase rules, transaction-driven budget actuals, liabilities, schema versioning, and real-device accessibility review.

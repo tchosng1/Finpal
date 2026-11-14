@@ -8,7 +8,7 @@ Use Node.js 20.19 or newer for local development and deployment builds.
 
 1. Create a Firebase project in the [Firebase Console](https://console.firebase.google.com/).
 2. In **Project settings → General**, register a Web app and note its Firebase client configuration.
-3. In **Authentication → Sign-in method**, enable **Google** and choose the support email.
+3. In **Authentication → Sign-in method**, enable **Google** and choose the support email. Configure Microsoft as well if Microsoft sign-in is desired.
 4. In **Authentication → Settings → Authorized domains**, add the deployed App Hosting domain and any custom domain.
 5. Create a Cloud Firestore database.
 
@@ -21,9 +21,11 @@ npm install
 npm run dev
 ```
 
-Enable Google under Firebase Authentication → Sign-in method. Create a Cloud Firestore database and deploy the checked-in Firestore rules. In Authentication → Settings → Authorized domains, add `localhost`. Open the app at `http://localhost:3000`; if you use `http://127.0.0.1:3000`, add `127.0.0.1` as an authorized domain as well if the console accepts it. Then use **Continue with Google** locally. Signed-in profile changes sync to the shared Firestore project on local and deployed origins; the footer reports whether a save is in progress, complete, or failed. Profiles left by the earlier local-only account implementation are migrated on first sign-in if Firestore has no profiles for that UID. Demo mode is also available and stays in browser local storage without signing in.
+Enable Google under Firebase Authentication → Sign-in method. Enable Email/Password to allow users with any email address to create a Finpal password, and configure Microsoft if Microsoft single sign-on is desired. Create a Cloud Firestore database and deploy the checked-in Firestore rules. In Authentication → Settings → Authorized domains, add `localhost`. Open the app at `http://localhost:3000`; if you use `http://127.0.0.1:3000`, add `127.0.0.1` as an authorized domain as well if the console accepts it. The first signed-in storage destination defaults to shared Firestore; users can switch it in Settings. Personal Drive/OneDrive storage requires additional setup described in [storage-providers.md](./storage-providers.md). Profiles left by the earlier local-only account implementation are migrated to Firestore on first sign-in if Firestore has no profiles for that UID. Demo mode is also available and stays in browser local storage without signing in.
 
-If a cloud read or save fails, the workspace shows the Firestore error instead of silently falling back to device-only storage. Verify the app is using the intended Firebase project, Firestore is enabled, and `firestore.rules` have been deployed.
+If a selected storage read or save fails, the workspace shows the provider error instead of silently falling back to another destination. Verify the app is using the intended Firebase project, Firestore is enabled, and `firestore.rules` have been deployed.
+
+On a user's first sign-in with shared Finpal storage, an empty `users/{uid}/profiles` collection is expected: the app opens with **Start with a profile** so they can create their first profile. Google Drive or OneDrive permissions are only requested if the user separately chooses those providers. Firebase Authentication provides the signed-in UID, and Firestore Security Rules authorize that UID to access only its own profile documents. A `permission-denied` error usually means the database rules are missing, have not been deployed, or do not match the current project; `not-found`/`failed-precondition` usually means the Firestore database has not been created or is not ready. These are project-owner setup issues, not permissions a signed-in user can grant from the app.
 
 ### Troubleshooting Google sign-in
 
@@ -66,6 +68,7 @@ App Hosting provisions the required build and runtime infrastructure. Check the 
 ## 5. Production checklist
 
 - [ ] Confirm Google provider and support email are configured.
+- [ ] If offered, confirm Microsoft sign-in provider and Entra redirect URI are configured.
 - [ ] Confirm production and custom domains are authorized in Firebase Auth.
 - [ ] Deploy and review Firestore rules.
 - [ ] Verify `src/lib/firebase-config.ts` points to the shared Finpal Firebase project.
@@ -77,4 +80,4 @@ App Hosting provisions the required build and runtime infrastructure. Check the 
 
 ## Data and privacy notes
 
-Google sign-in verifies a person’s identity; it does not provision a Firebase project or grant access to that person’s personal Google Drive. Each signed-in person’s profiles are stored in the shared Finpal Firebase project under that person’s authenticated UID (`users/{uid}/profiles/{profileId}`), including when the app is running locally. Firestore rules prevent other users from accessing those documents. Demo mode is browser-local and has no authentication. The Firebase project and its billing/data administration belong to the Finpal project owner. This first release does not link bank accounts or import live balances. Do not enter credentials, payment-card details, or other sensitive account secrets in notes or asset names.
+Google or Microsoft sign-in identifies the person; it does not automatically grant access to that provider's storage. Signed-in users may choose shared Finpal Firestore, their personal Google Drive app-data folder, their personal OneDrive app folder, or device-only storage. Shared Firestore records are under the authenticated Firebase UID and protected by deployed rules; the Firebase project and its billing/data administration belong to the Finpal project owner. Provider storage setup is documented in [storage-providers.md](./storage-providers.md). Demo mode is browser-local and has no authentication. This first release does not link bank accounts or import live balances. Do not enter credentials, payment-card details, or other sensitive account secrets in notes or asset names.

@@ -1,7 +1,13 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
 import {
   GoogleAuthProvider,
+  OAuthProvider,
+  createUserWithEmailAndPassword,
   getAuth,
+  linkWithPopup,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   type User,
@@ -18,7 +24,7 @@ import { firebaseConfig } from "@/lib/firebase-config";
 
 export const firebaseConfigured = Object.values(firebaseConfig).every(Boolean);
 
-function getFirebaseApp() {
+export function getFirebaseApp() {
   if (!firebaseConfigured) throw new Error("Firebase is not configured.");
   return getApps().length ? getApp() : initializeApp(firebaseConfig);
 }
@@ -34,6 +40,51 @@ export async function signInWithGoogle(): Promise<User> {
   provider.setCustomParameters({ prompt: "select_account" });
   const result = await signInWithPopup(auth, provider);
   return result.user;
+}
+
+export async function signInWithMicrosoft(): Promise<User> {
+  const auth = getAuthClient();
+  if (!auth) throw new Error("Microsoft sign-in is unavailable until Firebase is configured.");
+  const provider = new OAuthProvider("microsoft.com");
+  provider.setCustomParameters({ prompt: "select_account" });
+  const result = await signInWithPopup(auth, provider);
+  return result.user;
+}
+
+export async function signInWithEmail(email: string, password: string): Promise<User> {
+  const auth = getAuthClient();
+  if (!auth) throw new Error("Email sign-in is unavailable until Firebase is configured.");
+  return (await signInWithEmailAndPassword(auth, email, password)).user;
+}
+
+export async function createEmailAccount(email: string, password: string): Promise<User> {
+  const auth = getAuthClient();
+  if (!auth) throw new Error("Email sign-in is unavailable until Firebase is configured.");
+  const { user } = await createUserWithEmailAndPassword(auth, email, password);
+  await sendEmailVerification(user);
+  return user;
+}
+
+export async function sendPasswordReset(email: string) {
+  const auth = getAuthClient();
+  if (!auth) throw new Error("Password reset is unavailable until Firebase is configured.");
+  await sendPasswordResetEmail(auth, email);
+}
+
+export async function linkGoogleAccount() {
+  const auth = getAuthClient();
+  if (!auth?.currentUser) throw new Error("Sign in before linking another provider.");
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  return (await linkWithPopup(auth.currentUser, provider)).user;
+}
+
+export async function linkMicrosoftAccount() {
+  const auth = getAuthClient();
+  if (!auth?.currentUser) throw new Error("Sign in before linking another provider.");
+  const provider = new OAuthProvider("microsoft.com");
+  provider.setCustomParameters({ prompt: "select_account" });
+  return (await linkWithPopup(auth.currentUser, provider)).user;
 }
 
 export async function signOutFromGoogle() {
@@ -80,4 +131,8 @@ export async function loadProfiles(uid: string): Promise<FinanceProfile[]> {
 
 export async function saveProfile(uid: string, profile: FinanceProfile) {
   await setDoc(doc(getFirestore(getFirebaseApp()), "users", uid, "profiles", profile.id), profile);
+}
+
+export async function saveProfiles(uid: string, profiles: FinanceProfile[]) {
+  await Promise.all(profiles.map((profile) => saveProfile(uid, profile)));
 }

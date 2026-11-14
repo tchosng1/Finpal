@@ -15,7 +15,9 @@ import {
   ChevronRight,
   CircleHelp,
   CreditCard,
+  Database,
   FileChartColumnIncreasing,
+  HardDrive,
   Home,
   Landmark,
   LayoutDashboard,
@@ -59,12 +61,24 @@ import { FinanceTools } from "@/components/finance-tools";
 import { BudgetPlanner } from "@/components/budget-planner";
 import {
   firebaseConfigured,
+  createEmailAccount,
   getAuthClient,
-  loadProfiles,
-  saveProfile,
+  linkGoogleAccount,
+  linkMicrosoftAccount,
   signInWithGoogle,
+  signInWithEmail,
+  signInWithMicrosoft,
+  sendPasswordReset,
   signOutFromGoogle,
 } from "@/lib/firebase";
+import {
+  connectGoogleDrive,
+  connectOneDrive,
+  getStorageErrorMessage,
+  loadStoredProfiles,
+  saveStoredProfiles,
+  type StorageProvider,
+} from "@/lib/storage";
 import { onAuthStateChanged, type User } from "firebase/auth";
 
 type Section = "Overview" | "Activity" | "Budgets" | "Assets" | "Forecast" | "Retirement" | "Saving planner" | "Investment planner" | "Home loan planner" | "Goals" | "Settings";
@@ -93,6 +107,21 @@ const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Se
 
 function getSignInErrorMessage(error: unknown) {
   const code = error && typeof error === "object" && "code" in error ? error.code : null;
+  if (code === "auth/operation-not-allowed") {
+    return "This sign-in provider is not enabled in Firebase Authentication. Ask the Finpal project administrator to enable it.";
+  }
+  if (code === "auth/account-exists-with-different-credential") {
+    return "An account already exists for this email with another sign-in method. Sign in with that method first, then link the additional provider in Settings.";
+  }
+  if (code === "auth/email-already-in-use") {
+    return "An account already uses this email. Sign in instead, or use the existing provider and link sign-in methods from Settings.";
+  }
+  if (code === "auth/weak-password") {
+    return "Choose a password with at least 6 characters.";
+  }
+  if (code === "auth/invalid-credential" || code === "auth/invalid-login-credentials") {
+    return "The email or password is not correct.";
+  }
   if (code === "auth/configuration-not-found") {
     return "Firebase Authentication has no active sign-in configuration for project finpal-2947c. In Firebase Console, confirm you selected finpal-2947c, open Authentication → Sign-in method, enable Google, and save. Also confirm Authentication has been initialized for this project.";
   }
@@ -285,6 +314,7 @@ export default function FinpalApp() {
   const [authChecked, setAuthChecked] = useState(!firebaseConfigured);
   const [profilesLoadedForUid, setProfilesLoadedForUid] = useState<string | null>(null);
   const [profileLoadAttempt, setProfileLoadAttempt] = useState(0);
+  const [storageProvider, setStorageProvider] = useState<StorageProvider>("firebase");
   const [mode, setMode] = useState<"demo" | "account" | null>(null);
   const [profiles, setProfiles] = useState<FinanceProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState("");
@@ -296,6 +326,10 @@ export default function FinpalApp() {
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "saved" | "error">("idle");
   const [profileLoading, setProfileLoading] = useState(false);
   const [authActionBusy, setAuthActionBusy] = useState(false);
+  const [emailAuthOpen, setEmailAuthOpen] = useState(false);
+  const [emailAuthMode, setEmailAuthMode] = useState<"sign-in" | "create">("sign-in");
+  const [emailAddress, setEmailAddress] = useState("");
+  const [emailPassword, setEmailPassword] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
@@ -324,6 +358,11 @@ export default function FinpalApp() {
       setProfilesLoadedForUid(null);
       setSyncStatus("idle");
       setAuthError("");
+      const savedStorage = user ? localStorage.getItem(`finpal-storage-provider:${user.uid}`) : null;
+      const validProviders: StorageProvider[] = ["firebase", "google-drive", "onedrive", "device"];
+      setStorageProvider(savedStorage && validProviders.includes(savedStorage as StorageProvider)
+        ? savedStorage as StorageProvider
+        : "firebase");
       const restoreDemo = !user && localStorage.getItem("finpal-demo-session") === "true";
       setMode(user ? "account" : restoreDemo ? "demo" : null);
       if (restoreDemo) {
@@ -338,7 +377,7 @@ export default function FinpalApp() {
   useEffect(() => {
     if (!authUser) return;
     let active = true;
-    loadProfiles(authUser.uid)
+    loadStoredProfiles(authUser.uid, storageProvider)
       .then((loadedProfiles) => {
         if (!active) return;
         setProfiles(loadedProfiles);
@@ -347,13 +386,13 @@ export default function FinpalApp() {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        const message = error instanceof Error ? error.message : "Could not load your profiles.";
-        setAuthError(`Cloud load failed: ${message}`);
+        const message = getStorageErrorMessage(error);
+        setAuthError(`Storage load failed: ${message}`);
         setSyncStatus("error");
       })
       .finally(() => active && setProfileLoading(false));
     return () => { active = false; };
-  }, [authUser, profileLoadAttempt]);
+  }, [authUser, profileLoadAttempt, storageProvider]);
 
   useEffect(() => {
     if (mode === "demo" && profiles.length > 0) {
@@ -367,21 +406,21 @@ export default function FinpalApp() {
     Promise.resolve().then(() => {
       if (!active) return;
       setSyncStatus("syncing");
-      return Promise.all(profiles.map((profile) => saveProfile(authUser.uid, profile)));
+      return saveStoredProfiles(authUser.uid, storageProvider, profiles);
     })
       .then(() => {
         if (!active) return;
         setSyncStatus("saved");
-        setAuthError((current) => current.startsWith("Cloud sync failed:") ? "" : current);
+        setAuthError((current) => current.startsWith("Storage sync failed:") ? "" : current);
       })
       .catch((error: unknown) => {
         if (!active) return;
         const message = error instanceof Error ? error.message : "Could not sync your profiles.";
         setSyncStatus("error");
-        setAuthError(`Cloud sync failed: ${message}`);
+        setAuthError(`Storage sync failed: ${message}`);
       });
     return () => { active = false; };
-  }, [authUser, mode, profiles, profilesLoadedForUid]);
+  }, [authUser, mode, profiles, profilesLoadedForUid, storageProvider]);
 
   useEffect(() => {
     if (!notice) return;
@@ -405,11 +444,12 @@ export default function FinpalApp() {
     setAuthError("");
   }, []);
 
-  const login = async () => {
+  const login = async (provider: "google" | "microsoft") => {
     setAuthActionBusy(true);
     setAuthError("");
     try {
-      await signInWithGoogle();
+      if (provider === "google") await signInWithGoogle();
+      else await signInWithMicrosoft();
       localStorage.removeItem("finpal-demo-session");
     } catch (error) {
       setAuthError(getSignInErrorMessage(error));
@@ -417,6 +457,38 @@ export default function FinpalApp() {
       setAuthActionBusy(false);
     }
   };
+
+  async function submitEmailAuth(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthActionBusy(true);
+    setAuthError("");
+    try {
+      if (emailAuthMode === "create") {
+        await createEmailAccount(emailAddress.trim(), emailPassword);
+        setNotice("Account created. Check your email to verify your address.");
+      } else {
+        await signInWithEmail(emailAddress.trim(), emailPassword);
+      }
+      localStorage.removeItem("finpal-demo-session");
+    } catch (error) {
+      setAuthError(getSignInErrorMessage(error));
+    } finally {
+      setAuthActionBusy(false);
+    }
+  }
+
+  async function requestPasswordReset() {
+    setAuthActionBusy(true);
+    setAuthError("");
+    try {
+      await sendPasswordReset(emailAddress.trim());
+      setNotice("If an account exists for that email, a password reset message has been sent.");
+    } catch (error) {
+      setAuthError(getSignInErrorMessage(error));
+    } finally {
+      setAuthActionBusy(false);
+    }
+  }
 
   const logout = async () => {
     if (mode === "account") {
@@ -619,6 +691,47 @@ export default function FinpalApp() {
     return Array.from(new Set(["Housing", "Food & dining", "Transportation", "Shopping", "Utilities", "Healthcare", "Investing", "Entertainment", "Other", ...existing]));
   }, [activeProfile]);
 
+  function activateStorageProvider(provider: StorageProvider) {
+    if (!authUser) return;
+    localStorage.setItem(`finpal-storage-provider:${authUser.uid}`, provider);
+    setStorageProvider(provider);
+    setProfileLoadAttempt((attempt) => attempt + 1);
+    setProfiles([]);
+    setActiveProfileId("");
+    setProfilesLoadedForUid(null);
+    setProfileLoading(true);
+    setSyncStatus("idle");
+    setAuthError("");
+  }
+
+  async function connectStorageProvider(provider: "google-drive" | "onedrive") {
+    setAuthActionBusy(true);
+    setAuthError("");
+    try {
+      if (provider === "google-drive") await connectGoogleDrive();
+      else await connectOneDrive();
+      activateStorageProvider(provider);
+    } catch (error) {
+      setAuthError(`Storage connection failed: ${getStorageErrorMessage(error)}`);
+    } finally {
+      setAuthActionBusy(false);
+    }
+  }
+
+  async function linkIdentityProvider(provider: "google" | "microsoft") {
+    setAuthActionBusy(true);
+    setAuthError("");
+    try {
+      const user = provider === "google" ? await linkGoogleAccount() : await linkMicrosoftAccount();
+      setAuthUser(user);
+      setNotice(`${provider === "google" ? "Google" : "Microsoft"} sign-in linked to this Finpal account.`);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Could not link the sign-in provider.");
+    } finally {
+      setAuthActionBusy(false);
+    }
+  }
+
   function retryCloudLoad() {
     setProfileLoading(true);
     setAuthError("");
@@ -631,23 +744,31 @@ export default function FinpalApp() {
   if (mode === "account" && authUser && profileLoading && profilesLoadedForUid !== authUser.uid) {
     return (
       <main className="loading-screen">
-        <Brand /><span className="loading-dot" /><span className="loading-copy">Loading your cloud profiles…</span>
+        <Brand /><span className="loading-dot" /><span className="loading-copy">Loading profiles from {storageLabel(storageProvider)}…</span>
         {authUser.email && <span className="loading-account">{authUser.email}</span>}
         {notice && <span className="error-message" role="alert">{notice}</span>}
         <button className="soft-button" onClick={logout} disabled={authActionBusy}>{authActionBusy ? "Signing out…" : "Sign out"}</button>
       </main>
     );
   }
-  if (mode === "account" && authUser && profilesLoadedForUid !== authUser.uid && authError.startsWith("Cloud load failed:")) {
+  if (mode === "account" && authUser && profilesLoadedForUid !== authUser.uid
+    && (authError.startsWith("Storage load failed:") || authError.startsWith("Storage connection failed:"))) {
     return (
       <main className="loading-screen cloud-load-error">
         <Brand />
         <div role="alert">
-          <strong>We couldn&apos;t load your cloud profiles.</strong>
+          <strong>Profiles are not available from the selected storage.</strong>
           {authUser.email && <p className="loading-account">{authUser.email}</p>}
           <p>{authError}</p>
+          <p>Changing destinations does not copy or delete your profiles. Your existing data remains in its original storage.</p>
           {notice && <p className="error-message" role="alert">{notice}</p>}
-          <button className="primary-button" onClick={retryCloudLoad}>Retry loading profiles</button>
+          <div className="storage-fallback-actions">
+            <button className="primary-button" onClick={retryCloudLoad}>Retry selected storage</button>
+            <button className="soft-button" onClick={() => activateStorageProvider("firebase")}>Use shared Finpal storage</button>
+            <button className="soft-button" onClick={() => activateStorageProvider("device")}>Use this device</button>
+            <button className="soft-button" onClick={() => void connectStorageProvider("google-drive")}>Connect Google Drive</button>
+            <button className="soft-button" onClick={() => void connectStorageProvider("onedrive")}>Connect OneDrive</button>
+          </div>
           <button className="soft-button" onClick={logout} disabled={authActionBusy}>{authActionBusy ? "Signing out…" : "Sign out"}</button>
         </div>
       </main>
@@ -679,12 +800,34 @@ export default function FinpalApp() {
               <h2>A calmer way to<br />think about money.</h2>
               <p>Sign in to bring your financial life together.</p>
               {firebaseConfigured ? (
-                <button className="google-button" onClick={login} disabled={authActionBusy}>
+                <button className="google-button" onClick={() => login("google")} disabled={authActionBusy}>
                   <GoogleMark />{authActionBusy ? "Connecting..." : "Continue with Google"}
                 </button>
               ) : (
-                <div className="setup-notice"><ShieldCheck size={17} /><span>The demo works without Firebase. Signed-in Google profiles sync to the shared Finpal cloud database, including when you develop locally.</span></div>
+                <div className="setup-notice"><ShieldCheck size={17} /><span>The demo works without Firebase. Configure the shared Firebase project to enable account sign-in and storage choices.</span></div>
               )}
+              {firebaseConfigured && <button className="microsoft-button" onClick={() => login("microsoft")} disabled={authActionBusy}>
+                <span className="microsoft-mark" aria-hidden="true"><i /><i /><i /><i /></span>
+                Continue with Microsoft
+              </button>}
+              {firebaseConfigured && <button className="email-auth-toggle" onClick={() => { setEmailAuthOpen((open) => !open); setAuthError(""); }}>
+                {emailAuthOpen ? "Hide email sign-in" : "Continue with email"}
+              </button>}
+              {emailAuthOpen && firebaseConfigured && <form className="email-auth-form" onSubmit={(event) => void submitEmailAuth(event)}>
+                <label htmlFor="auth-email">Email address</label>
+                <input id="auth-email" type="email" autoComplete="email" required value={emailAddress} onChange={(event) => setEmailAddress(event.target.value)} />
+                <label htmlFor="auth-password">Password</label>
+                <input id="auth-password" type="password" autoComplete={emailAuthMode === "create" ? "new-password" : "current-password"} minLength={6} required value={emailPassword} onChange={(event) => setEmailPassword(event.target.value)} />
+                <button className="primary-button" type="submit" disabled={authActionBusy}>
+                  {authActionBusy ? "Please wait…" : emailAuthMode === "create" ? "Create account" : "Sign in with email"}
+                </button>
+                <div className="email-auth-actions">
+                  <button type="button" onClick={() => { setEmailAuthMode((current) => current === "create" ? "sign-in" : "create"); setAuthError(""); }}>
+                    {emailAuthMode === "create" ? "Already have an account? Sign in" : "New to Finpal? Create an account"}
+                  </button>
+                  {emailAuthMode === "sign-in" && <button type="button" onClick={() => void requestPasswordReset()} disabled={authActionBusy}>Forgot password?</button>}
+                </div>
+              </form>}
               <div className="auth-divider"><span />or<span /></div>
               <button className="demo-button" onClick={startDemo}>Explore the demo <ArrowRight size={16} /></button>
               {authError && <p className="error-message" role="alert">{authError}</p>}
@@ -757,7 +900,7 @@ export default function FinpalApp() {
           </div>
         </header>
         <div className="page-content">
-          {authError && <div className="storage-error" role="alert"><ShieldCheck size={16} /><span>{authError}</span>{authError.startsWith("Cloud load failed:") && <button onClick={retryCloudLoad}>Retry</button>}{!authError.startsWith("Cloud load failed:") && <button onClick={() => setAuthError("")}>Dismiss</button>}</div>}
+          {authError && <div className="storage-error" role="alert"><ShieldCheck size={16} /><span>{authError}</span>{authError.startsWith("Storage load failed:") && <button onClick={retryCloudLoad}>Retry</button>}{!authError.startsWith("Storage load failed:") && <button onClick={() => setAuthError("")}>Dismiss</button>}</div>}
           {!activeProfile ? (
             <section className="empty-profiles">
               <span className="welcome-mark"><Wallet size={20} /></span>
@@ -784,6 +927,15 @@ export default function FinpalApp() {
               onSetRetirementReturn={setRetirementReturn}
               onSetRetirementContributionRate={setRetirementContributionRate}
               onSetProfileCurrency={setProfileCurrency}
+              storageProvider={storageProvider}
+              storageError={authError}
+              storageBusy={authActionBusy}
+              identityEmail={authUser?.email ?? ""}
+              linkedIdentityProviders={authUser?.providerData.map((provider) => provider.providerId) ?? []}
+              isAccountMode={mode === "account"}
+              onSelectStorage={activateStorageProvider}
+              onConnectStorage={connectStorageProvider}
+              onLinkIdentity={linkIdentityProvider}
               onSaveGoal={saveGoal}
               onDeleteGoal={deleteGoal}
               onDeleteTransaction={deleteTransaction}
@@ -793,7 +945,7 @@ export default function FinpalApp() {
             />
           )}
         </div>
-        <footer className="main-footer"><span><ShieldCheck size={14} />{mode === "account" ? syncStatus === "syncing" ? "Syncing to your Google account…" : syncStatus === "error" ? "Cloud sync needs attention" : syncStatus === "saved" ? "Synced to your Google account" : "Private by design" : "Private by design"}</span><span>Money, in perspective <i>·</i> Finpal {new Date().getFullYear()}</span></footer>
+        <footer className="main-footer"><span><ShieldCheck size={14} />{mode === "account" ? syncStatus === "syncing" ? `Syncing to ${storageLabel(storageProvider)}…` : syncStatus === "error" ? "Storage sync needs attention" : syncStatus === "saved" ? `Synced to ${storageLabel(storageProvider)}` : "Private by design" : "Private by design"}</span><span>Money, in perspective <i>·</i> Finpal {new Date().getFullYear()}</span></footer>
       </main>
       {notice && <div className="toast" role="status"><span className="toast-check"><Check size={14} /></span>{notice}<button className="toast-close" onClick={() => setNotice("")} aria-label="Dismiss"><X size={15} /></button></div>}
       {modal && <FinanceModal
@@ -810,6 +962,16 @@ export default function FinpalApp() {
       />}
     </div>
   );
+}
+
+function storageLabel(provider: StorageProvider) {
+  const labels: Record<StorageProvider, string> = {
+    firebase: "Finpal cloud",
+    "google-drive": "Google Drive",
+    onedrive: "OneDrive",
+    device: "this device",
+  };
+  return labels[provider];
 }
 
 function GoogleMark() {
@@ -831,6 +993,15 @@ function DashboardContent({
   onSetRetirementReturn,
   onSetRetirementContributionRate,
   onSetProfileCurrency,
+  storageProvider,
+  storageError,
+  storageBusy,
+  identityEmail,
+  linkedIdentityProviders,
+  isAccountMode,
+  onSelectStorage,
+  onConnectStorage,
+  onLinkIdentity,
   onSaveGoal,
   onDeleteGoal,
   onDeleteTransaction,
@@ -852,6 +1023,15 @@ function DashboardContent({
   onSetRetirementReturn: (value: string) => void;
   onSetRetirementContributionRate: (value: string) => void;
   onSetProfileCurrency: (value: string) => void;
+  storageProvider: StorageProvider;
+  storageError: string;
+  storageBusy: boolean;
+  identityEmail: string;
+  linkedIdentityProviders: string[];
+  isAccountMode: boolean;
+  onSelectStorage: (provider: StorageProvider) => void;
+  onConnectStorage: (provider: "google-drive" | "onedrive") => Promise<void>;
+  onLinkIdentity: (provider: "google" | "microsoft") => Promise<void>;
   onSaveGoal: (goal: Omit<SavingsGoal, "id">, id?: string) => void;
   onDeleteGoal: (goalId: string) => void;
   onDeleteTransaction: (transactionId: string) => void;
@@ -1009,6 +1189,37 @@ function DashboardContent({
 
       {section === "Settings" && (
         <section className="settings-layout">
+          {isAccountMode && <>
+          <article className="panel settings-card">
+            <div className="panel-header"><div><h2>Sign-in methods</h2><p>Connect identities independently from where your finance data is stored.</p></div><span className="metric-icon purple-icon"><ShieldCheck size={17} /></span></div>
+            <p className="settings-hint">{identityEmail ? `Signed in as ${identityEmail}.` : "Signed in to Finpal."} Linking another provider keeps it attached to this Firebase account where provider policies allow it.</p>
+            <div className="identity-link-actions">
+              {!linkedIdentityProviders.includes("google.com") && <button className="soft-button" onClick={() => void onLinkIdentity("google")} disabled={storageBusy}>Link Google account</button>}
+              {!linkedIdentityProviders.includes("microsoft.com") && <button className="soft-button" onClick={() => void onLinkIdentity("microsoft")} disabled={storageBusy}>Link Microsoft account</button>}
+            </div>
+            <p className="settings-hint">Microsoft sign-in must be enabled in the Finpal Firebase Authentication project. An email provider is for identity; Google Drive or OneDrive access must be connected separately.</p>
+          </article>
+          <article className="panel settings-card storage-settings-card">
+            <div className="panel-header"><div><h2>Data storage</h2><p>Choose where this signed-in account&apos;s profiles are stored.</p></div><span className="metric-icon purple-icon"><Database size={17} /></span></div>
+            <p className="settings-hint storage-explanation">Storage is separate from sign-in. Switching storage does not move or delete data; each destination has its own profile list.</p>
+            <div className="storage-options" role="group" aria-label="Profile storage provider">
+              <button className={`storage-option ${storageProvider === "firebase" ? "storage-option-selected" : ""}`} aria-pressed={storageProvider === "firebase"} onClick={() => onSelectStorage("firebase")}>
+                <Database size={18} /><span><strong>Shared Finpal Firebase</strong><small>Private per account, secured by your Firebase UID. Finpal operates this database.</small></span><i>{storageProvider === "firebase" ? "Selected" : "Select"}</i>
+              </button>
+              <button className={`storage-option ${storageProvider === "google-drive" ? "storage-option-selected" : ""}`} aria-pressed={storageProvider === "google-drive"} onClick={() => void onConnectStorage("google-drive")} disabled={storageBusy}>
+                <HardDrive size={18} /><span><strong>Your Google Drive</strong><small>Saved to the hidden Finpal app-data folder in your Drive.</small></span><i>{storageBusy && storageProvider === "google-drive" ? "Connecting…" : storageProvider === "google-drive" ? "Reconnect" : "Connect"}</i>
+              </button>
+              <button className={`storage-option ${storageProvider === "onedrive" ? "storage-option-selected" : ""}`} aria-pressed={storageProvider === "onedrive"} onClick={() => void onConnectStorage("onedrive")} disabled={storageBusy}>
+                <HardDrive size={18} /><span><strong>Your Microsoft OneDrive</strong><small>Saved to the Finpal app folder in your OneDrive.</small></span><i>{storageBusy && storageProvider === "onedrive" ? "Connecting…" : storageProvider === "onedrive" ? "Reconnect" : "Connect"}</i>
+              </button>
+              <button className={`storage-option ${storageProvider === "device" ? "storage-option-selected" : ""}`} aria-pressed={storageProvider === "device"} onClick={() => onSelectStorage("device")}>
+                <HardDrive size={18} /><span><strong>This device only</strong><small>Stored in this browser&apos;s local storage; not synced to your other devices.</small></span><i>{storageProvider === "device" ? "Selected" : "Select"}</i>
+              </button>
+            </div>
+            {storageError.startsWith("Storage connection failed:") && <p className="storage-provider-error" role="alert">{storageError}</p>}
+            <p className="settings-hint">Before using Google Drive or OneDrive, complete the provider setup described in the deployment guide. Your data is not automatically copied when you change destinations.</p>
+          </article>
+          </>}
           <article className="panel settings-card">
             <div className="panel-header"><div><h2>Regional preferences</h2><p>Choose the currency to use across this person&apos;s financial views.</p></div><span className="metric-icon purple-icon"><Settings2 size={17} /></span></div>
             <label className="settings-currency-field" htmlFor="profile-currency"><span>Display currency</span><select id="profile-currency" aria-label="Display currency" value={profile.currency} onChange={(event) => onSetProfileCurrency(event.target.value)}><option value="MYR">Malaysian Ringgit (RM)</option><option value="USD">US Dollar ($)</option><option value="SGD">Singapore Dollar (S$)</option><option value="AUD">Australian Dollar (A$)</option><option value="GBP">British Pound (£)</option><option value="EUR">Euro (€)</option><option value="CAD">Canadian Dollar (CA$)</option><option value="INR">Indian Rupee (₹)</option><option value="IDR">Indonesian Rupiah (Rp)</option></select></label>

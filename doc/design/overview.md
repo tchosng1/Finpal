@@ -32,7 +32,7 @@ Finpal is a personal financial home for understanding the present and planning a
 | Investment planner | Scenario calculator | Model a starting investment and regular contributions over time |
 | Home loan planner | Payoff comparison | Compare scheduled and additional payments, payoff time, interest, chart, and yearly balances |
 | Goals | Savings and FIRE planning | Edit profile-specific goals; project accumulation, FI milestone, fixed annual withdrawals, and post-FI balance visually and in a yearly table |
-| Settings | Profile preferences | Save the display currency per person |
+| Settings | Profile and account preferences | Set profile currency and choose shared, Google Drive, OneDrive, or device-only storage |
 | Profile switcher | Separate financial context per person | Switch, create, and manage each person’s data independently |
 
 ## Interaction and visual principles
@@ -50,8 +50,12 @@ Finpal is a personal financial home for understanding the present and planning a
 Next.js App Router (server-rendered route and metadata)
 └── Client finance workspace
     ├── Profile-scoped finance domain (src/lib/finance.ts)
-    ├── Firebase Auth (Google popup)
-    ├── Firestore repository adapter (src/lib/firebase.ts)
+    ├── Firebase Auth (Google, Microsoft, and email/password)
+    ├── Storage adapter (src/lib/storage.ts)
+    │   ├── Shared Firebase Firestore
+    │   ├── Google Drive appData folder
+    │   ├── Microsoft OneDrive app folder
+    │   └── Browser localStorage
     └── Local demo adapter (browser localStorage)
 ```
 
@@ -59,15 +63,20 @@ The route and metadata use the Next.js App Router; the interactive finance works
 
 ### Persistence and identity
 
-- Google identity is provided by Firebase Authentication in configured local and deployed environments. Local development also works without Firebase configuration in browser-local demo mode.
-- Signed-in data is stored at `users/{uid}/profiles/{profileId}` in Cloud Firestore.
+- Google and Microsoft identities are provided by Firebase Authentication when their providers are enabled in the shared project. Email/password supports any email address with a Finpal password. Microsoft support requires an Entra app registration and Firebase provider setup.
+- Storage is selected separately from identity and remembered per Firebase UID in browser localStorage. The selection is never treated as proof of provider access.
+- Shared Finpal Firestore stores documents at `users/{uid}/profiles/{profileId}`. This remains the default and needs no external Drive/OneDrive client configuration.
 - Firestore rules allow a user to read/write only their own profile documents; profile IDs are checked against document IDs.
+- Google Drive stores the profile list in its hidden `appDataFolder`, using a separately consented `drive.appdata` OAuth scope. Google access tokens remain in memory and expire; the user must reconnect after a page reload or token expiration.
+- OneDrive stores the profile list in the connected user's app folder via Microsoft Graph with delegated `Files.ReadWrite.AppFolder` permission. MSAL caches provider tokens in session storage and silently refreshes when possible.
+- Device-only storage uses a UID-specific localStorage key and does not sync to another browser/device.
+- Changing storage destinations does not automatically move data. Each provider owns an independent profile list; the user must export/import or manually recreate data before switching (migration UX remains future work).
 - Demo workspace data is stored in this browser’s local storage and is not uploaded.
-- Authenticated profile data is stored in Firestore on both localhost and hosted domains. The app shows cloud load/save errors and sync status rather than silently switching a signed-in account to local-only storage.
+- The app shows selected-storage load/save errors and sync status rather than silently switching a signed-in account to another destination.
 - If an earlier version left UID-keyed authenticated profiles in local storage and the corresponding cloud account has no profiles yet, the app uploads those profiles to Firestore and removes the local copy only after all profile writes succeed.
 - Currency selection is profile-specific and changes formatting only; it does not apply exchange-rate conversion.
 - The shared Finpal Firebase Web app config is bundled in `src/lib/firebase-config.ts`. End users and App Hosting do not need to configure Firebase at runtime. The web API key is a public Firebase client identifier; authorization is enforced by Firebase Auth and Firestore rules, not by hiding the key.
-- Google login identifies the user; it does not create a Firebase project or save app data to the user’s personal Google Drive. User-owned records are isolated within the shared Finpal Firestore project.
+- Signing in with a Google or Microsoft account does not itself grant cloud storage access. Drive and OneDrive must be explicitly connected separately. Shared Finpal Firestore is administered by the Finpal project owner; device-only storage remains on the current browser.
 
 ### Financial calculation boundaries
 
@@ -82,6 +91,6 @@ The route and metadata use the Next.js App Router; the interactive finance works
 1. Add liabilities and account reconciliation to turn total assets into net worth.
 2. Add recurring income/expense schedules and month-by-month budget actuals.
 3. Introduce a versioned persistence schema and migration functions before changing stored profile shapes.
-4. Add account linking through a properly secured financial-data provider, with user consent and a server-side token boundary.
+4. Add a safe, explicit migration/export/import flow when switching storage providers.
 5. Add household roles/sharing only with explicit authorization rules and profile-level permission design.
 6. Add tests for calculation helpers and Firebase rules alongside each new module.

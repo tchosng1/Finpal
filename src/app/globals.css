@@ -298,6 +298,22 @@ button { color: inherit; cursor: pointer; }
 .purple-bullet { background: #7b83dc; }.green-bullet { background: #73b5a2; }
 .settings-layout { display: grid; grid-template-columns: minmax(0, 620px); gap: 14px; }
 .settings-card { padding: 22px; }
+.storage-explanation { max-width: 100%; margin: 14px 0; }
+.storage-options { display: flex; flex-direction: column; gap: 7px; margin: 16px 0; }
+.storage-option { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px; text-align: left; border: 1px solid #e9eaf0; border-radius: 9px; color: #777c90; background: #fff; transition: .15s ease; }
+.storage-option:hover:not(:disabled) { border-color: #cfd2f1; background: #fcfcff; }
+.storage-option:disabled { opacity: .65; cursor: wait; }
+.storage-option > svg { flex: 0 0 auto; color: #858bd8; }
+.storage-option > span { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.storage-option strong { color: #454a60; font-size: 10px; }
+.storage-option small { color: #9296a6; font-size: 8px; line-height: 1.5; }
+.storage-option > i { flex: 0 0 auto; font-size: 8px; font-style: normal; font-weight: 700; color: #777fcf; }
+.storage-option-selected { border-color: #aeb4eb; background: #f8f8ff; box-shadow: inset 0 0 0 1px rgba(110,120,213,.08); }
+.storage-provider-error { padding: 9px 10px; border-radius: 7px; color: #a55350; background: #fff5f4; font-size: 9px; line-height: 1.6; overflow-wrap: anywhere; }
+.storage-fallback-actions { width: min(100%, 350px); display: grid; gap: 8px; margin: 0 auto 15px; }
+.cloud-load-error .storage-fallback-actions .soft-button { margin: 0; }
+.identity-link-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 15px 0; }
+.identity-link-actions .soft-button { min-height: 33px; }
 .settings-currency-field { display: flex; flex-direction: column; gap: 8px; max-width: 390px; margin: 26px 0 18px; color: #6f7386; font-size: 10px; font-weight: 600; }
 .settings-currency-field select { height: 40px; border: 1px solid #e6e7ed; border-radius: 8px; padding: 0 11px; color: #464a5f; background: #fff; outline: 0; }
 .settings-currency-field select:focus { border-color: #9299e2; box-shadow: 0 0 0 3px rgba(108,118,212,.1); }
@@ -435,6 +451,20 @@ button { color: inherit; cursor: pointer; }
 .google-button { display: flex; width: 100%; align-items: center; justify-content: center; gap: 10px; height: 43px; border: 1px solid #e5e6ed; background: #fff; border-radius: 8px; color: #4a4e60; font-size: 10px; font-weight: 600; }
 .google-button:hover { background: #fafaff; border-color: #d5d7e8; }
 .google-button:disabled { opacity: .65; cursor: wait; }
+.microsoft-button { display: flex; width: 100%; align-items: center; justify-content: center; gap: 10px; height: 43px; margin-top: 9px; border: 1px solid #e5e6ed; background: #fff; border-radius: 8px; color: #4a4e60; font-size: 10px; font-weight: 600; }
+.microsoft-button:hover { background: #fafaff; border-color: #d5d7e8; }
+.microsoft-button:disabled { opacity: .65; cursor: wait; }
+.microsoft-mark { display: grid; grid-template-columns: 7px 7px; grid-template-rows: 7px 7px; gap: 2px; }
+.microsoft-mark i:nth-child(1) { background: #f35325; }.microsoft-mark i:nth-child(2) { background: #81bc06; }.microsoft-mark i:nth-child(3) { background: #05a6f0; }.microsoft-mark i:nth-child(4) { background: #ffba08; }
+.email-auth-toggle { width: 100%; margin-top: 10px; padding: 8px; border: 0; background: transparent; color: #626dc7; font-size: 9px; font-weight: 700; }
+.email-auth-form { display: flex; flex-direction: column; gap: 7px; padding: 11px; border: 1px solid #eeeff5; border-radius: 9px; background: #fcfcfe; }
+.email-auth-form label { color: #707589; font-size: 9px; font-weight: 600; }
+.email-auth-form input { width: 100%; height: 36px; border: 1px solid #e6e7ed; border-radius: 7px; padding: 0 9px; outline: 0; font-size: 10px; }
+.email-auth-form input:focus { border-color: #9299e2; box-shadow: 0 0 0 3px rgba(108,118,212,.1); }
+.email-auth-form .primary-button { width: 100%; min-height: 36px; margin-top: 4px; }
+.email-auth-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.email-auth-actions button { padding: 3px 0; border: 0; background: transparent; color: #6874d4; font-size: 8px; }
+.email-auth-actions button:disabled { opacity: .6; }
 .google-mark { width: 17px; height: 17px; }
 .setup-notice { display: flex; align-items: flex-start; gap: 8px; border: 1px solid #e9eaf5; background: #f8f8ff; color: #85899d; padding: 10px; border-radius: 8px; font-size: 9px; line-height: 1.5; }
 .setup-notice svg { color: #7781d8; flex: 0 0 auto; }
