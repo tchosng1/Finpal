@@ -294,7 +294,8 @@ export default function FinpalApp() {
   const [notice, setNotice] = useState("");
   const [authError, setAuthError] = useState("");
   const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "saved" | "error">("idle");
-  const [busy, setBusy] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [authActionBusy, setAuthActionBusy] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
 
@@ -317,7 +318,7 @@ export default function FinpalApp() {
     }
     return onAuthStateChanged(clientAuth, (user) => {
       setAuthUser(user);
-      setBusy(Boolean(user));
+      setProfileLoading(Boolean(user));
       setProfiles([]);
       setActiveProfileId("");
       setProfilesLoadedForUid(null);
@@ -350,7 +351,7 @@ export default function FinpalApp() {
         setAuthError(`Cloud load failed: ${message}`);
         setSyncStatus("error");
       })
-      .finally(() => active && setBusy(false));
+      .finally(() => active && setProfileLoading(false));
     return () => { active = false; };
   }, [authUser, profileLoadAttempt]);
 
@@ -405,7 +406,7 @@ export default function FinpalApp() {
   }, []);
 
   const login = async () => {
-    setBusy(true);
+    setAuthActionBusy(true);
     setAuthError("");
     try {
       await signInWithGoogle();
@@ -413,23 +414,29 @@ export default function FinpalApp() {
     } catch (error) {
       setAuthError(getSignInErrorMessage(error));
     } finally {
-      setBusy(false);
+      setAuthActionBusy(false);
     }
   };
 
   const logout = async () => {
     if (mode === "account") {
+      setAuthActionBusy(true);
       try {
         await signOutFromGoogle();
+        localStorage.removeItem("finpal-demo-session");
       } catch (error) {
         setNotice(error instanceof Error ? error.message : "Could not sign out.");
+      } finally {
+        setAuthActionBusy(false);
       }
+      return;
     }
     setMode(null);
     localStorage.removeItem("finpal-demo-session");
     setProfiles([]);
     setActiveProfileId("");
     setProfileMenuOpen(false);
+    setAuthError("");
   };
 
   function addProfile(name: string) {
@@ -613,7 +620,7 @@ export default function FinpalApp() {
   }, [activeProfile]);
 
   function retryCloudLoad() {
-    setBusy(true);
+    setProfileLoading(true);
     setAuthError("");
     setProfileLoadAttempt((attempt) => attempt + 1);
   }
@@ -621,8 +628,30 @@ export default function FinpalApp() {
   if (!authChecked) {
     return <main className="loading-screen"><Brand /><span className="loading-dot" /></main>;
   }
-  if (mode === "account" && authUser && busy && profilesLoadedForUid !== authUser.uid) {
-    return <main className="loading-screen"><Brand /><span className="loading-dot" /><span className="loading-copy">Loading your cloud profiles…</span></main>;
+  if (mode === "account" && authUser && profileLoading && profilesLoadedForUid !== authUser.uid) {
+    return (
+      <main className="loading-screen">
+        <Brand /><span className="loading-dot" /><span className="loading-copy">Loading your cloud profiles…</span>
+        {authUser.email && <span className="loading-account">{authUser.email}</span>}
+        {notice && <span className="error-message" role="alert">{notice}</span>}
+        <button className="soft-button" onClick={logout} disabled={authActionBusy}>{authActionBusy ? "Signing out…" : "Sign out"}</button>
+      </main>
+    );
+  }
+  if (mode === "account" && authUser && profilesLoadedForUid !== authUser.uid && authError.startsWith("Cloud load failed:")) {
+    return (
+      <main className="loading-screen cloud-load-error">
+        <Brand />
+        <div role="alert">
+          <strong>We couldn&apos;t load your cloud profiles.</strong>
+          {authUser.email && <p className="loading-account">{authUser.email}</p>}
+          <p>{authError}</p>
+          {notice && <p className="error-message" role="alert">{notice}</p>}
+          <button className="primary-button" onClick={retryCloudLoad}>Retry loading profiles</button>
+          <button className="soft-button" onClick={logout} disabled={authActionBusy}>{authActionBusy ? "Signing out…" : "Sign out"}</button>
+        </div>
+      </main>
+    );
   }
 
   if (!mode) {
@@ -650,8 +679,8 @@ export default function FinpalApp() {
               <h2>A calmer way to<br />think about money.</h2>
               <p>Sign in to bring your financial life together.</p>
               {firebaseConfigured ? (
-                <button className="google-button" onClick={login} disabled={busy}>
-                  <GoogleMark />{busy ? "Connecting..." : "Continue with Google"}
+                <button className="google-button" onClick={login} disabled={authActionBusy}>
+                  <GoogleMark />{authActionBusy ? "Connecting..." : "Continue with Google"}
                 </button>
               ) : (
                 <div className="setup-notice"><ShieldCheck size={17} /><span>The demo works without Firebase. Signed-in Google profiles sync to the shared Finpal cloud database, including when you develop locally.</span></div>
@@ -708,9 +737,11 @@ export default function FinpalApp() {
         <div className="sidebar-bottom">
           <button className="nav-item support-item" onClick={() => setNotice("Your money stays private to your account and its profiles.")}><CircleHelp size={18} /><span>Help & support</span></button>
           <div className="sidebar-user">
-            <span className="user-mini">{(authUser?.displayName ?? "Demo User").split(" ").map((part) => part[0]).join("").slice(0, 2)}</span>
-            <span className="user-copy"><strong>{authUser?.displayName ?? "Demo workspace"}</strong><small>{mode === "demo" ? "Preview mode" : authUser?.email}</small></span>
-            <button className="icon-button signout-button" onClick={logout} aria-label="Sign out"><LogOut size={16} /></button>
+            <span className="user-mini" title={authUser?.email ?? "Demo workspace"}>{(authUser?.displayName ?? authUser?.email ?? "Demo User").split(" ").map((part) => part[0]).join("").slice(0, 2)}</span>
+            <span className="user-copy"><strong>{authUser?.displayName ?? authUser?.email ?? "Demo workspace"}</strong><small>{mode === "demo" ? "Preview mode" : authUser?.email}</small></span>
+            <button className="icon-button signout-button" onClick={logout} disabled={authActionBusy} aria-label={mode === "demo" ? "Exit demo" : `Sign out${authUser?.email ? ` of ${authUser.email}` : ""}`} title={mode === "demo" ? "Exit demo" : "Sign out"}>
+              <LogOut size={16} /><span className="signout-label">{authActionBusy ? "Signing out…" : mode === "demo" ? "Exit demo" : "Sign out"}</span>
+            </button>
           </div>
         </div>
       </aside>

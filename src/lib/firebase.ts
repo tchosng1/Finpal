@@ -8,7 +8,7 @@ import {
 } from "firebase/auth";
 import {
   collection,
-  getDocs,
+  getDocsFromServer,
   getFirestore,
   setDoc,
   doc,
@@ -30,7 +30,9 @@ export function getAuthClient() {
 export async function signInWithGoogle(): Promise<User> {
   const auth = getAuthClient();
   if (!auth) throw new Error("Google sign-in is unavailable until Firebase is configured.");
-  const result = await signInWithPopup(auth, new GoogleAuthProvider());
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: "select_account" });
+  const result = await signInWithPopup(auth, provider);
   return result.user;
 }
 
@@ -41,7 +43,7 @@ export async function signOutFromGoogle() {
 }
 
 export async function loadProfiles(uid: string): Promise<FinanceProfile[]> {
-  const snapshot = await getDocs(collection(getFirestore(getFirebaseApp()), "users", uid, "profiles"));
+  const snapshot = await getDocsFromServer(collection(getFirestore(getFirebaseApp()), "users", uid, "profiles"));
   const cloudProfiles = snapshot.docs.map((profileDoc) => {
     const data = profileDoc.data() as Partial<FinanceProfile>;
     return {
